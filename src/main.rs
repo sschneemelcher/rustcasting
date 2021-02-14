@@ -6,13 +6,8 @@ extern crate piston;
 use glutin_window::GlutinWindow as Window;
 use opengl_graphics::{GlGraphics, OpenGL};
 use piston::event_loop::{EventSettings, Events, EventLoop};
-use piston::input::*; //{RenderArgs, RenderEvent, UpdateArgs, UpdateEvent};
+use piston::input::*;
 use piston::window::WindowSettings;
-
-#[derive(Clone, PartialEq)]
-enum Direction {
-	Right, Left, Up, Down
-}
 
 struct Game {
 	gl: GlGraphics,
@@ -32,23 +27,22 @@ impl Game {
 		self.view.render(&mut self.gl, arg, &self.player, &self.map);
 	}
 
-//	fn update(&mut self) {
+	fn update(&mut self) {
+		if self.player.dir.iter().any(|&i| i == 1) {	
+			self.player.update(&self.map);
+			self.view.update(&self.player);
+		}
+	}
 
-//	}
-
-	fn pressed(&mut self, btn: &Button) {
-		let last_direction = self.player.dir.clone();
-
-		self.player.dir = match btn {
-			&Button::Keyboard(Key::Up) => Direction::Up,
-			&Button::Keyboard(Key::Down) => Direction::Down,
-			&Button::Keyboard(Key::Left) => Direction::Left,
-			&Button::Keyboard(Key::Right) => Direction::Right,
-			_ => last_direction
+	fn pressed(&mut self, btn: &Button, v: i32) {
+		match btn {
+			&Button::Keyboard(Key::Up) => self.player.dir[0] = v,
+			&Button::Keyboard(Key::Down) => self.player.dir[1] = v,
+			&Button::Keyboard(Key::Left) => self.player.dir[2] = v,
+			&Button::Keyboard(Key::Right) => self.player.dir[3] = v,
+			_ => (),
 		};
 			
-		self.player.update(&self.map);
-		self.view.update(&self.player);
 	}
 }
 
@@ -57,7 +51,7 @@ struct Player {
 	pos_y: f32,
 	dir_x: f32,
 	dir_y: f32,
-	dir: Direction,
+	dir: Vec<i32>,
 }
 
 impl Player {
@@ -65,34 +59,33 @@ impl Player {
 		let deg:f32 = 3.14159/30.0;
 		let speed:f32 = 0.05;
 
-		match self.dir {
-			Direction::Left => {
-				let old_dir_x:f32 = self.dir_x.clone();
-				self.dir_x = old_dir_x * deg.cos() - self.dir_y * deg.sin();
-				self.dir_y = old_dir_x * deg.sin() + self.dir_y * deg.cos();
-				},
-			Direction::Right => {
-				let old_dir_x:f32 = self.dir_x.clone();
-				self.dir_x = old_dir_x * (-deg).cos() - self.dir_y * (-deg).sin();
-				self.dir_y = old_dir_x * (-deg).sin() + self.dir_y * (-deg).cos();
-				},
-			Direction::Up => {
-				if self.pos_y > self.dir_y * speed{
-					self.pos_y += self.dir_y * speed;
-				}
-				if self.pos_x > self.dir_x * speed {
-					self.pos_x += self.dir_x * speed;
-				}
-				},
-			Direction::Down => {
-				if self.pos_y + self.dir_y * speed < map.height as f32 {
-					self.pos_y -= self.dir_y * speed;
-				}
-				if self.pos_x + self.dir_x * speed < map.width as f32 {
-					self.pos_x -= self.dir_x * speed;
-				}
-				}, 
+		if self.dir[2] == 1 {		
+			let old_dir_x:f32 = self.dir_x.clone();
+			self.dir_x = old_dir_x * deg.cos() - self.dir_y * deg.sin();
+			self.dir_y = old_dir_x * deg.sin() + self.dir_y * deg.cos();
 		}
+		if self.dir[3] == 1 {
+				let old_dir_x:f32 = self.dir_x.clone();
+			self.dir_x = old_dir_x * (-deg).cos() - self.dir_y * (-deg).sin();
+			self.dir_y = old_dir_x * (-deg).sin() + self.dir_y * (-deg).cos();
+		}
+		if self.dir[0] == 1 {
+			if map.values[((self.pos_y + self.dir_y * speed) as i32 * map.height + self.pos_x as i32) as usize] == 0 {
+				self.pos_y += self.dir_y * speed;
+			}
+			if map.values[((self.pos_x + self.dir_x * speed) as i32 + self.pos_y as i32 * map.height) as usize] == 0 {
+				self.pos_x += self.dir_x * speed;
+			}
+		}
+		if self.dir[1] == 1 {
+			if map.values[((self.pos_y - self.dir_y * speed) as i32 * map.height + self.pos_x as i32) as usize] == 0{
+				self.pos_y -= self.dir_y * speed;
+			}
+			if map.values[((self.pos_x - self.dir_x * speed) as i32 + self.pos_y as i32 * map.height) as usize] == 0 {
+				self.pos_x -= self.dir_x * speed;
+			}
+		} 
+		
 	}
 }
 
@@ -196,8 +189,8 @@ impl View {
 			}
 
 			let lw:i32 = self.screen_width / w;
-			
-			let red: [f32; 4] = [1.0, 0.0, 0.0, 1.0];
+				
+			let red: [f32; 4] = [1.0, 0.0, 0.0, 1.0 - (side as f32 * 0.3)]; // opacity depends on side that is hit by ray
 			
 			let square = graphics::rectangle::rectangle_by_corners((x * lw) as f64,
 								((self.screen_height as f32 - lh) * 0.5) as f64,
@@ -213,23 +206,17 @@ impl View {
 	fn update(&mut self, player: &Player) {
 		let deg:f32 = 3.14159/30.0;
 
-		match player.dir {
-			Direction::Left => {
-				let old_plane_x:f32 = self.plane_x.clone();
-				self.plane_x = old_plane_x * deg.cos() - self.plane_y * deg.sin();
-				self.plane_y = old_plane_x * deg.sin() + self.plane_y * deg.cos();
-				},
-			Direction::Right => {
+		if player.dir[2] == 1 {
+			let old_plane_x:f32 = self.plane_x.clone();
+			self.plane_x = old_plane_x * deg.cos() - self.plane_y * deg.sin();
+			self.plane_y = old_plane_x * deg.sin() + self.plane_y * deg.cos();
+		}
+		if player.dir[3] == 1 {	
 				let old_plane_x:f32 = self.plane_x.clone();
 				self.plane_x = old_plane_x * (-deg).cos() - self.plane_y * (-deg).sin();
 				self.plane_y = old_plane_x * (-deg).sin() + self.plane_y * (-deg).cos();
-				},
-			_ => (),
 		}
 	}
-
-
-
 }
 
 
@@ -246,9 +233,9 @@ fn main() {
 
 	let mut game = Game {
 		gl: GlGraphics::new(opengl),
-		player: Player { pos_x: 2.0, pos_y: 2.0, dir_x: -1.0, dir_y: 0.0, dir: Direction::Right },
+		player: Player { pos_x:1.2 , pos_y: 1.2, dir_x: -1.0, dir_y: 0.0, dir: [0, 0, 0, 0].to_vec() },
 		map: Map { height: 5, width: 5, values: [1,1,1,1,1,1,0,0,0,1,1,0,1,0,1,1,0,0,0,1,1,1,1,1,1].to_vec() },
-		view: View { screen_width: 960, screen_height: 480, plane_x: 0.0, plane_y:0.66, max_dof: 5, rays: 24 },
+		view: View { screen_width: 960, screen_height: 480, plane_x: 0.0, plane_y:0.66, max_dof: 5, rays: 192 },
 	};
 
 	let mut events = Events::new(EventSettings::new());//.ups(120);
@@ -257,13 +244,18 @@ fn main() {
 			game.render(&args);
 		}
 		
-	//	if let Some(_u) = e.update_args() {
-	//		game.update();
-	//	}
+		if let Some(_u) = e.update_args() {
+			game.update();
+		}
 		if let Some(k) = e.button_args() {
 			if k.state == ButtonState::Press {
-				game.pressed(&k.button);
+				game.pressed(&k.button, 1);
 			}
+
+			if k.state == ButtonState::Release {
+				game.pressed(&k.button, 0);
+			}
+
 		}
 
 	}
