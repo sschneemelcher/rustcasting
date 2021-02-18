@@ -18,12 +18,6 @@ struct Game {
 
 impl Game {
 	fn render(&mut self, arg: &RenderArgs) {
-		let black: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
-
-		self.gl.draw(arg.viewport(), |_c, gl| {
-			graphics::clear(black, gl);
-		});
-		
 		self.view.render(&mut self.gl, arg, &self.player, &self.map);
 	}
 
@@ -56,7 +50,7 @@ struct Player {
 
 impl Player {
 	fn update(&mut self, map: &Map) {
-		let deg:f32 = 3.14159/30.0;
+		let deg:f32 = 3.14159/90.0;
 		let speed:f32 = 0.05;
 
 		if self.dir[2] == 1 {		
@@ -117,6 +111,7 @@ impl View {
 
 
 		let black: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
+		let sky_blue: [f32; 4] = [0.2, 0.1, 1.0, 0.5];
 
 		gl.draw(arg.viewport(), |_c, gl| {
 			graphics::clear(black, gl);
@@ -124,8 +119,26 @@ impl View {
 
 
 
-		let w:i32 = map.width*self.rays;
-		for x in 1..w {
+
+		let sky = graphics::rectangle::rectangle_by_corners(0.0 as f64,
+					0.0 as f64,
+					self.screen_width as f64, (self.screen_height / 2) as f64);
+	
+
+		gl.draw(arg.viewport(), |c, gl| {
+			let transform = c.transform;
+			graphics::rectangle(sky_blue, sky, transform, gl);
+		});
+
+
+
+
+
+		let w:i32 = map.width*self.rays; 
+
+			
+
+		for x in 0..w {
 			let camera_x:f32 = 2.0 * x as f32 / self.rays as f32 / map.width as f32 - 1.0;
 			let raydir_x:f32 = player.dir_x + self.plane_x * camera_x;
 			let raydir_y:f32 = player.dir_y + self.plane_y * camera_x;
@@ -178,33 +191,36 @@ impl View {
 			}
 
 			if side == 1 {
-				perp_wall_dist = (map_y as f32 - player.pos_y + (1.0 - steps_y) * 0.5) / raydir_y;
+				perp_wall_dist = (map_y as f32 - player.pos_y + (1.0 - steps_y) * 0.5) / raydir_y + 0.0001; // add tiny bit to prevent 0
 			} else {
-				perp_wall_dist = (map_x as f32 - player.pos_x + (1.0 - steps_x) * 0.5) / raydir_x;
+				perp_wall_dist = (map_x as f32 - player.pos_x + (1.0 - steps_x) * 0.5) / raydir_x + 0.0001;
 			}
 
 			let mut lh:f32 = self.screen_height as f32;
-			if perp_wall_dist > 0.0 {
-				lh /= perp_wall_dist;
-			}
+			
+			lh /= perp_wall_dist;
 
 			let lw:i32 = self.screen_width / w;
 				
-			let red: [f32; 4] = [1.0, 0.0, 0.0, 1.0 - (side as f32 * 0.3)]; // opacity depends on side that is hit by ray
 			
 			let square = graphics::rectangle::rectangle_by_corners((x * lw) as f64,
 								((self.screen_height as f32 - lh) * 0.5) as f64,
 								((x * lw) + lw) as f64, ((self.screen_height as f32 - lh) * 0.5 + lh) as f64);
 	
+			let red: [f32; 4] = [1.0 - (side as f32 * 0.3) - perp_wall_dist*0.1, 0.0, 0.0, 1.0]; // color depends on side that is hit by ray and distance
+			
 			gl.draw(arg.viewport(), |c, gl| {
 				let transform = c.transform;
 				graphics::rectangle(red, square, transform, gl);
 			});
+
+
+
 		}
 	}
 
 	fn update(&mut self, player: &Player) {
-		let deg:f32 = 3.14159/30.0;
+		let deg:f32 = 3.14159/90.0;
 
 		if player.dir[2] == 1 {
 			let old_plane_x:f32 = self.plane_x.clone();
@@ -223,9 +239,12 @@ impl View {
 fn main() {
 	let opengl = OpenGL::V3_2;
 
+	let screen_width: i32 = 1024;
+	let screen_height: i32 = 512;
+
 	let mut window: Window = WindowSettings::new(
 		"raycasting",
-		[960, 480]
+		[screen_width as u32, screen_height as u32]
 		).graphics_api(opengl)
 		.exit_on_esc(true)
 		.build()
@@ -234,11 +253,15 @@ fn main() {
 	let mut game = Game {
 		gl: GlGraphics::new(opengl),
 		player: Player { pos_x:1.2 , pos_y: 1.2, dir_x: -1.0, dir_y: 0.0, dir: [0, 0, 0, 0].to_vec() },
-		map: Map { height: 5, width: 5, values: [1,1,1,1,1,1,0,0,0,1,1,0,1,0,1,1,0,0,0,1,1,1,1,1,1].to_vec() },
-		view: View { screen_width: 960, screen_height: 480, plane_x: 0.0, plane_y:0.66, max_dof: 5, rays: 192 },
+		map: Map { height: 8, width: 8, values: [1,1,1,1,1,1,1,1,
+							 1,0,0,0,0,0,0,1,
+							 1,0,1,0,0,1,0,1,
+							 1,0,0,0,0,1,0,1,
+							 1,1,1,1,1,1,1,1].to_vec() },
+		view: View { screen_width: screen_width, screen_height: screen_height, plane_x: 0.0, plane_y:0.66, max_dof: 8, rays: 128 },
 	};
 
-	let mut events = Events::new(EventSettings::new());//.ups(120);
+	let mut events = Events::new(EventSettings::new()).ups(60);
 	while let Some(e) = events.next(&mut window) {
 		if let Some(args) = e.render_args() {
 			game.render(&args);
